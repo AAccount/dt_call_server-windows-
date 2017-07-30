@@ -41,15 +41,16 @@ namespace DTOperator
 					continue;
 				}
 
-				String[] contents = line.Split(' ');
+				String[] contents = line.Split('>');
 				if(contents.Length != 2)
 				{
 					Console.WriteLine("Users file line '" + line + "' is misconfigured");
 					continue;
 				}
-				String uname = contents[0];
+				String uname = Utils.Trim(contents[0]);
+				String path = Utils.Trim(contents[1]);
 
-				RSACryptoServiceProvider publicKey = Key.PemKeyUtils.GetRSAProviderFromPemFile(contents[1]);
+				RSACryptoServiceProvider publicKey = Key.PemKeyUtils.GetRSAProviderFromPemFile(path);
 				if(publicKey == null)
 				{
 					Console.WriteLine("Problems creating public key obj for " + uname);
