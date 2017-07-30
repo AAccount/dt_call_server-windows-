@@ -73,6 +73,7 @@ namespace DTOperator
 				return;
 			}
 			
+			//let the user know if the optional values weren't filled in
 			if(!gotCmd)
 			{
 				String warn = "using the default command port";
@@ -83,13 +84,32 @@ namespace DTOperator
 				String warn = "using the default media port";
 				userUtils.InsertLog(new Log(Log.TAG_INIT, warn, Log.SELF, Log.SYSTEM, Log.SELFIP));
 			}
-			
-			X509Certificate2 mergedKey = new X509Certificate2(mergedKeyFile);
 
-			//setup the command fd/socket
-			Socket commandSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-			commandSocket.Bind(new IPEndPoint(IPAddress.Any, cmdPort));
-			commandSocket.Listen(Const.MAXLISTENWAIT);
+			//generate public and private key objects from merged key file
+			X509Certificate2 mergedKey = null;
+			try
+			{
+				mergedKey = new X509Certificate2(mergedKeyFile);
+			}
+			catch(Exception e)
+			{
+				DumpException(e, Log.TAG_INIT);
+				return;
+			}
+
+			//setup the command socket
+			Socket commandSocket = null;
+			try
+			{
+				commandSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+				commandSocket.Bind(new IPEndPoint(IPAddress.Any, cmdPort));
+				commandSocket.Listen(Const.MAXLISTENWAIT);
+			}
+			catch (Exception e)
+			{
+				DumpException(e, Log.TAG_INIT);
+				return;
+			}
 
 			//setup for udp thread
 			Thread udpThread = new Thread(() => UdpThread(mediaPort, mergedKey));
@@ -100,43 +120,50 @@ namespace DTOperator
 			}
 			catch(Exception e)
 			{
-				String ex = e.Message + "\n" + e.StackTrace;
-				userUtils.InsertLog(new Log(Log.TAG_INIT, ex, Log.SELF, Log.ERROR, Log.SELFIP));
+				DumpException(e, Log.TAG_INIT);
 				return; //no udp thread, can't do anything useful
 			}
 
 			while(true)
 			{
+				//establish the "read fd set"
 				ArrayList readSockets = new ArrayList();
 				readSockets.Add(commandSocket);
-
 				foreach(KeyValuePair<Socket, SslStream> client in clientssl)
 				{
 					readSockets.Add(client.Key);
 				}
-
+				
 				Socket.Select(readSockets, null, null, -1);
 				for(int i=0; i<readSockets.Count; i++)
 				{
 					Socket socket = (Socket)readSockets[i];
 					if (socket == commandSocket)
 					{
-						String incomingip = "(lost)";
+						Socket incoming = null;
+						SslStream incomingSsl = null;
 						try //equivalent to C's accept not returning 0 and SSL_ERROR_something
 						{
-							Socket incoming = commandSocket.Accept();
-							incomingip = incoming.RemoteEndPoint.ToString();
+							incoming = commandSocket.Accept();
 							incoming.ReceiveTimeout = Const.UNAUTHTIMEOUT;
 							incoming.NoDelay = true;
-							SslStream incomingSsl = new SslStream(new NetworkStream(incoming));
+							incomingSsl = new SslStream(new NetworkStream(incoming));
 							incomingSsl.AuthenticateAsServer(mergedKey, false, System.Security.Authentication.SslProtocols.Tls12, false);
 							clientssl.Add(incoming, incomingSsl);
-							
 						}
 						catch(Exception e)
 						{
-							String ex = e.Message + "\n" + e.StackTrace;
-							userUtils.InsertLog(new Log(Log.TAG_INCOMINGCMD, ex, Log.SELF, Log.ERROR, incomingip));
+							DumpException(e, Log.TAG_INCOMINGCMD);
+
+							//cleanup failed socket resources
+							if (incomingSsl != null)
+							{
+								incomingSsl.Close();
+							}
+							if(incoming != null)
+							{
+								incoming.Close();
+							}
 						}
 						continue; //incoming socket, no need to do anything on it yet
 					}
@@ -144,15 +171,15 @@ namespace DTOperator
 					//read the socket
 					SslStream socketSsl = clientssl[socket];
 					byte[] inputBuffer = new byte[Const.COMMANDSIZE+1];
-					int amountRead = 0;
+					int amountRead;
 					try
 					{
 						amountRead = socketSsl.Read(inputBuffer, 0, Const.COMMANDSIZE);
 					}
 					catch(Exception e)
 					{
-						String ex = e.Message + "\n" + e.StackTrace;
-						userUtils.InsertLog(new Log(Log.TAG_SSL, ex, Log.SELF, Log.ERROR, incomingip));
+						DumpException(e, Log.TAG_SSL);
+						amountRead = 0; //make sure it is seen as a dead socket
 					}
 
 					//remove dead sockets
@@ -163,9 +190,19 @@ namespace DTOperator
 						continue;
 					}
 
-					String bufferString = Encoding.ASCII.GetString(inputBuffer);
-					bufferString = bufferString.Substring(0, amountRead);
-				
+					//turn the raw bytes into a text string
+					String bufferString;
+					try
+					{
+						bufferString = Encoding.ASCII.GetString(inputBuffer);
+						bufferString = bufferString.Substring(0, amountRead);
+					}
+					catch(Exception e) //if the bytes aren't a string, skip this command
+					{
+						DumpException(e, Log.TAG_BADCMD);
+						continue;
+					}
+
 					//check for jbyte
 					if(bufferString.Equals(Const.JBYTE))
 					{
@@ -173,7 +210,8 @@ namespace DTOperator
 					}
 
 					String[] commandContents = bufferString.Split('|');
-					String ip = socket.RemoteEndPoint.ToString();
+					String ip = IpFromSocket(socket);
+					
 					long unixNow = DateTimeOffset.Now.ToUnixTimeSeconds();
 
 					try
@@ -192,13 +230,14 @@ namespace DTOperator
 						String command = commandContents.ElementAt(1);
 						if(command.Equals("login1"))
 						{//unixts|login1|user
+
 							String name = commandContents.ElementAt(2);
 							userUtils.InsertLog(new Log(Log.TAG_LOGIN, bufferString, name, Log.INBOUND, ip));
 							RSACryptoServiceProvider publicKey = userUtils.GetPublicKey(name);
 							if(publicKey == null)
 							{//not a real user
 								String invalid = unixNow + "|invalid";
-								userUtils.InsertLog(new Log(Log.TAG_LOGIN, invalid, name, Log.ERROR, ip));
+								userUtils.InsertLog(new Log(Log.TAG_LOGIN, invalid, name, Log.OUTBOUND, ip));
 								Write2Client(invalid, socket);
 								RemoveClient(socket);
 								continue;
@@ -218,6 +257,7 @@ namespace DTOperator
 						}
 						else if(command.Equals("login2"))
 						{//unixts|login2|user|challengedec
+
 							String name = commandContents.ElementAt(2);
 							String triedChallenge = commandContents.ElementAt(3);
 							userUtils.InsertLog(new Log(Log.TAG_LOGIN, bufferString, name, Log.INBOUND, ip));
@@ -249,7 +289,7 @@ namespace DTOperator
 							//set the internal db information
 							String skey = Utils.RandomString(Const.SESSIONKEY_LENGTH);
 							userUtils.SetSessionkey(name, skey);
-							userUtils.SetCommandFd(skey, socket);
+							userUtils.SetCommandSocket(skey, socket);
 							userUtils.SetChallenge(name, "");
 
 							//send ok + session key
@@ -308,10 +348,32 @@ namespace DTOperator
 
 							String notifyZapper = unixNow + "|incoming|" + touma;
 							Write2Client(notifyZapper, zapperSocket);
-							userUtils.InsertLog(new Log(Log.TAG_CALL, notifyZapper, zapper, Log.OUTBOUND, zapperSocket.RemoteEndPoint.ToString()));
+							userUtils.InsertLog(new Log(Log.TAG_CALL, notifyZapper, zapper, Log.OUTBOUND, IpFromSocket(zapperSocket)));
+						}
+						else if(command.Equals("accept"))
+						{//unixts|accept|touma|zapperkey
+
+							String zapper = user;
+							String touma = commandContents.ElementAt(2);
+							userUtils.InsertLog(new Log(Log.TAG_ACCEPT, bufferString, zapper, Log.INBOUND, ip));
+
+							if(!IsRealCall(zapper, touma, Log.TAG_ACCEPT))
+							{
+								continue;
+							}
+
+							Socket toumaSocket = userUtils.GetCommandSocket(touma);
+							String prepareTouma = unixNow + "|prepare|" + userUtils.GetPublicKeyDump(zapper) + "|" + zapper;
+							Write2Client(prepareTouma, toumaSocket);
+							userUtils.InsertLog(new Log(Log.TAG_ACCEPT, prepareTouma, touma, Log.OUTBOUND, IpFromSocket(toumaSocket)));
+
+							String prepareZapper = unixNow + "|prepare|" + touma;
+							Write2Client(prepareZapper, socket);
+							userUtils.InsertLog(new Log(Log.TAG_ACCEPT, prepareZapper, zapper, Log.OUTBOUND, ip));
 						}
 						else if(command.Equals("passthrough"))
 						{//unixts|passthrough|zapper|encrypted aes key|toumakey
+
 							String zapper = commandContents.ElementAt(2);
 							String touma = user;
 							String aes = commandContents.ElementAt(3);
@@ -340,7 +402,7 @@ namespace DTOperator
 						else if(command.Equals("ready"))
 						{//unixts|ready|touma|zapperkey
 							String zapper = user;
-							String touma = commandContents.ElementAt(3);
+							String touma = commandContents.ElementAt(2);
 							userUtils.InsertLog(new Log(Log.TAG_READY, bufferString, zapper, Log.INBOUND, ip));
 							if(!IsRealCall(zapper, touma, Log.TAG_READY))
 							{
@@ -401,8 +463,18 @@ namespace DTOperator
 		{
 			//setup the udp socket and private key decryptor
 			UdpClient udp = new UdpClient(port);
-			udp.Client.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.TypeOfService, Const.IPTOS_DSCP_EF);
+			try
+			{
+				udp.Client.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.TypeOfService, Const.IPTOS_DSCP_EF);
+			}
+			catch(Exception e)
+			{
+				Console.WriteLine("!!!!CANNOT SET EXPIDITED IP SERVICE!!!!");
+				DumpException(e, Log.TAG_UDPTHRAD);
+				return;
+			}
 			RSACryptoServiceProvider privateKey = (RSACryptoServiceProvider)serverKeys.PrivateKey;
+			ASCIIEncoding ascii = new ASCIIEncoding();
 
 			while (true)
 			{
@@ -437,7 +509,16 @@ namespace DTOperator
 
 					//decrypt registration
 					byte[] decMedia = privateKey.Decrypt(media, RSAEncryptionPadding.OaepSHA1);
-					String decMediaString = new ASCIIEncoding().GetString(decMedia);
+					String decMediaString;
+					try
+					{
+						decMediaString = ascii.GetString(decMedia);
+					}
+					catch(Exception e)
+					{
+						DumpException(e, Log.TAG_UDPTHRAD);
+						continue;
+					}
 					String[] decMediaContents = decMediaString.Split('|');
 
 					try
@@ -463,7 +544,7 @@ namespace DTOperator
 
 						//encrypt registration ack
 						String ack = unixNow + "|" + userUtils.GetSessionkey(user) + "|ok";
-						byte[] ackBytes = new ASCIIEncoding().GetBytes(ack);
+						byte[] ackBytes = ascii.GetBytes(ack);
 						byte[] ackEnc = userUtils.GetPublicKey(user).Encrypt(ackBytes, RSAEncryptionPadding.OaepSHA1);
 
 						//send encrypted ack
@@ -483,17 +564,17 @@ namespace DTOperator
 					{
 						continue;
 					}
+					IPEndPoint otherPersonAddr = userUtils.GetUdpInfo(otherPerson);
 
 					//passthrough of media to the other person
 					try
 					{
-						IPEndPoint otherPersonAddr = userUtils.GetUdpInfo(otherPerson);
 						udp.Send(media, media.Length, otherPersonAddr);
 					}
 					catch(Exception e)
 					{
 						String ex = e.Message + "\n" + e.StackTrace;
-						userUtils.InsertLog(new Log(Log.TAG_UDPTHRAD, ex, user, Log.ERROR, sender.ToString()));
+						userUtils.InsertLog(new Log(Log.TAG_UDPTHRAD, ex, user, Log.ERROR, otherPersonAddr.ToString()));
 					}
 				}
 			}
@@ -533,17 +614,17 @@ namespace DTOperator
 		{
 			String user = userUtils.UserFromCommandSocket(socket);
 			String ip = socket.RemoteEndPoint.ToString();
-			byte[] responseBytes = new ASCIIEncoding().GetBytes(response);
 
 			SslStream socketSsl = clientssl[socket];
 			try
 			{
+				byte[] responseBytes = new ASCIIEncoding().GetBytes(response);
 				socketSsl.Write(responseBytes);
 			}
 			catch (Exception e)
 			{
-				String exDump = e.Message + "\n" + e.StackTrace;
-				userUtils.InsertLog(new Log(Log.TAG_SSL, exDump, user, Log.ERROR, ip));
+					String exDump = e.Message + "\n" + e.StackTrace;
+					userUtils.InsertLog(new Log(Log.TAG_SSL, exDump, user, Log.ERROR, ip));
 			}
 		}
 		
@@ -558,7 +639,7 @@ namespace DTOperator
 				real = false;
 			}
 
-			if(!(awith.Equals(bwith)) || !(bwith.Equals(awith)))
+			if(!(awith.Equals(b)) || !(bwith.Equals(a)))
 			{
 				real = false;
 			}
@@ -582,6 +663,25 @@ namespace DTOperator
 			}
 
 			return real;
+		}
+
+		private static void DumpException(Exception e, String tag)
+		{
+			String ex = e.Message + "\n" + e.StackTrace;
+			userUtils.InsertLog(new Log(tag, ex, Log.SELF, Log.ERROR, Log.SELFIP));
+		}
+
+		private static String IpFromSocket(Socket s)
+		{
+			try
+			{
+				return s.RemoteEndPoint.ToString();
+			}
+			catch(Exception e)
+			{
+				DumpException(e, Log.TAG_SOCKET);
+				return "(exception raised)";
+			}
 		}
     }
 }

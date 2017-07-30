@@ -122,7 +122,7 @@ namespace DTOperator
 			}
 		}
 
-		public void SetCommandFd(String sessionkey, Socket socket)
+		public void SetCommandSocket(String sessionkey, Socket socket)
 		{
 			if(sessionkeyMap.ContainsKey(sessionkey))
 			{
@@ -159,7 +159,8 @@ namespace DTOperator
 					user.CommandSocket = null;
 				}
 
-				//TODO: the rest of the stuff associated with making a call
+				RemoveCallPair(username);
+				ClearUdpInfo(username);
 			}
 			else
 			{
@@ -264,8 +265,11 @@ namespace DTOperator
 			if (nameMap.ContainsKey(uname))
 			{
 				User user = nameMap[uname];
-				udpMap.Remove(user.UdpInfo);
-				user.UdpInfo = null;
+				if (user.UdpInfo != null)
+				{
+					udpMap.Remove(user.UdpInfo);
+					user.UdpInfo = null;
+				}
 				user.UserState = Const.ustate.NONE;
 			}
 			else

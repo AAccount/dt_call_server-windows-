@@ -25,7 +25,7 @@ namespace DTOperator
 		public static readonly String JBYTE = "D";
 
 		public static readonly int UNAUTHTIMEOUT = 500;
-		public static readonly int AUTHTIMEOUT = 2000;
+		public static readonly int AUTHTIMEOUT = 3000;
 
 		public static readonly String LOGFOLDER = "C:\\Users\\A\\dtoperator\\log\\";
 

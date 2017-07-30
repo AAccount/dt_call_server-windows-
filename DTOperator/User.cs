@@ -32,6 +32,7 @@ namespace DTOperator
 			//keep the same logic in both versions for easier mental sorting
 			Challenge = "";
 			Sessionkey = "";
+			CallWith = "";
 		}
 	}
 }

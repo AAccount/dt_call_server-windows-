@@ -29,6 +29,7 @@ namespace DTOperator
 		public static readonly String TAG_END = "end command";
 		public static readonly String TAG_PASSTHROUGH = "passthrough command";
 		public static readonly String TAG_READY = "ready command";
+		public static readonly String TAG_SOCKET = "socket obj"; //tag doesn't exist in unix c/c++ version
 
 		private String tag, message, user, type, ip;
 		public Log(String ctag, String cmessage, String cuser, String ctype, String cip)
