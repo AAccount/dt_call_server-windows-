@@ -9,7 +9,7 @@ namespace DTOperator
 {
     class Utils
     {
-        private static RandomNumberGenerator srand = RNGCryptoServiceProvider.Create();
+        private static RandomNumberGenerator srand = RandomNumberGenerator.Create();
 
         public static String Trim(String str)
         {
@@ -36,6 +36,13 @@ namespace DTOperator
 			"o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
 			"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N",
 			"O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"};
+			int multiples = Byte.MaxValue / chars.Length;
+			int uniformDistMax = chars.Length * multiples;
+			//Example: chars length is 10, Byte.MaxValue = 13
+			//	then if index = (0-->13) % 10, 0,1,2,3 are more
+			//	likely to be chosen compared to 4-->9 because
+			//	0=0,10; 1=1,11; 2=2,12; 3=3,13; 4=4, 5=5, etc...
+			//	If 10-->13 are chosen (in this example), redo the random pick
 
 			String result = "";
 			int i=0;
@@ -43,9 +50,8 @@ namespace DTOperator
 			{
 				byte[] indexByte = new byte[1];
 				srand.GetBytes(indexByte);
-				int index = (int)indexByte[0] % chars.Length;
-				int multiples = Byte.MaxValue / chars.Length;
-				if(index >= chars.Length*multiples)
+				int index = ((int)indexByte[0]) % chars.Length;
+				if(index >= uniformDistMax)
 				{//make it a secure UNIFORM distribution
 					continue;
 				}
