@@ -356,7 +356,7 @@ namespace DTOperator
 			{
 				logger.Close();
 				logStamp = now;
-				String nowString = now.ToString("MM_DD_YYYY_HH_MM") + ".log";
+				String nowString = now.ToString("MM_dd_yyyy_HH_mm") + ".log";
 				logger = new FileStream(Const.LOGFOLDER + nowString, FileMode.OpenOrCreate);
 			}
 
