@@ -8,6 +8,8 @@ namespace DTOperator
 {
 	class Log
 	{
+		private static readonly ASCIIEncoding ascii = new ASCIIEncoding();
+
 		public static readonly String INBOUND = "inbound";
 		public static readonly String OUTBOUND = "outbound";
 		public static readonly String ERROR = "error";
@@ -43,14 +45,14 @@ namespace DTOperator
 
 		public override String ToString()
 		{
-			return "tag=" + tag + "; message=" + message + "; user=" + user + "; type=" + type
+			return DateTime.Now.ToString("MMMM dd yyyy HH:mm") + " tag=" + tag + "; message=" + message + "; user=" + user + "; type=" + type
 				+ "; ip=" + ip + "\n";
 		}
 
 		public byte[] ToBytes()
 		{
 			String self = ToString();
-			byte[] selfbytes = new ASCIIEncoding().GetBytes(self);
+			byte[] selfbytes = ascii.GetBytes(self);
 			return selfbytes;
 		}
 	}
