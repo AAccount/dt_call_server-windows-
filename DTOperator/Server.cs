@@ -135,7 +135,7 @@ namespace DTOperator
 				}
 				
 				Socket.Select(readSockets, null, null, -1);
-				for(int i=0; i<readSockets.Count; i++)
+				for (int i = 0; i < readSockets.Count; i++)
 				{
 					Socket socket = (Socket)readSockets[i];
 					if (socket == commandSocket)
@@ -151,7 +151,7 @@ namespace DTOperator
 							incomingSsl.AuthenticateAsServer(mergedKey, false, System.Security.Authentication.SslProtocols.Tls12, false);
 							clientssl.Add(incoming, incomingSsl);
 						}
-						catch(Exception e)
+						catch (Exception e)
 						{
 							DumpException(e, Log.TAG_INCOMINGCMD);
 
@@ -160,7 +160,7 @@ namespace DTOperator
 							{
 								incomingSsl.Close();
 							}
-							if(incoming != null)
+							if (incoming != null)
 							{
 								incoming.Close();
 							}
@@ -169,24 +169,34 @@ namespace DTOperator
 					}
 
 					//read the socket
+					String ip = IpFromSocket(socket);
 					SslStream socketSsl = clientssl[socket];
-					byte[] inputBuffer = new byte[Const.COMMANDSIZE+1];
+					byte[] inputBuffer = new byte[Const.COMMANDSIZE + 1];
 					int amountRead;
 					try
 					{
 						amountRead = socketSsl.Read(inputBuffer, 0, Const.COMMANDSIZE);
 					}
-					catch(Exception e)
+					catch (Exception e)
 					{
 						DumpException(e, Log.TAG_SSL);
 						amountRead = 0; //make sure it is seen as a dead socket
 					}
 
 					//remove dead sockets
-					if(amountRead == 0)
+					if (amountRead == 0)
 					{
-						Console.WriteLine("Removing dead socket: " + socket.ToString());
+						Console.WriteLine("Removing dead socket: " + ip);
 						RemoveClient(socket); //not iterating through clientssl like c++ so safe to immediately remove
+						continue;
+					}
+
+					//check raw bytes to makes sure it's only the ascii subset of interest
+					if (!IsLegitimateAscii(inputBuffer, amountRead))
+					{
+						String unexpected = "unexpected byte in string";
+						String user = userUtils.UserFromCommandSocket(socket);
+						userUtils.InsertLog(new Log(Log.TAG_BADCMD, unexpected, user, Log.ERROR, ip));
 						continue;
 					}
 
@@ -210,7 +220,6 @@ namespace DTOperator
 					}
 
 					String[] commandContents = bufferString.Split('|');
-					String ip = IpFromSocket(socket);
 					
 					long unixNow = DateTimeOffset.Now.ToUnixTimeSeconds();
 
@@ -509,6 +518,16 @@ namespace DTOperator
 
 					//decrypt registration
 					byte[] decMedia = privateKey.Decrypt(media, RSAEncryptionPadding.OaepSHA1);
+
+					//check to make sure the decrypted contents only have ascii of interest
+					if(!IsLegitimateAscii(decMedia, decMedia.Length))
+					{
+						String unexpected = "unexpected byte in string";
+						String logUser = user.Equals("") ? "(new registration)" : user;
+						userUtils.InsertLog(new Log(Log.TAG_UDPTHRAD, unexpected, logUser, Log.ERROR, sender.ToString()));
+						continue;
+					}
+
 					String decMediaString;
 					try
 					{
@@ -683,5 +702,23 @@ namespace DTOperator
 				return "(exception raised)";
 			}
 		}
+
+        private static Boolean IsLegitimateAscii(byte[] input, int length)
+        {
+            for(int i=0; i<length; i++)
+            {
+                byte b = input[i];
+				bool isSign = ((b == 43) || (b == 45));
+				bool isNumber = ((b >= 48) && (b <= 57));
+				bool isUpperCase = ((b >= 65) && (b <= 90));
+				bool isLowerCase = ((b >= 97) && (b <= 122));
+				bool isDelimiter = (b == 124);
+				if(!isSign && !isNumber && !isUpperCase && !isLowerCase && !isDelimiter)
+				{
+					return false;
+				}
+			}
+			return true;
+        }
     }
 }
