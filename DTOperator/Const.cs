@@ -8,7 +8,7 @@ namespace DTOperator
 {
 	class Const
 	{
-		public static readonly String VERSION = "4.1:{git revision}_win";
+		public static readonly String VERSION = "4.2:{git revision}_win";
 
 		private static readonly bool LIVE = false;
 		private static readonly String PREFIX_LIVE = @"C:\Program Files\dtoperator\";

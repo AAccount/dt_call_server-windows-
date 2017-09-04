@@ -187,6 +187,15 @@ namespace DTOperator
 					if (amountRead == 0)
 					{
 						Console.WriteLine("Removing dead socket: " + ip);
+
+						//if this person is in a call, it is now officially a dropped call
+						String user = userUtils.UserFromCommandSocket(socket);
+						String other = userUtils.GetCallWith(user);
+						if(!other.Equals(""))
+						{
+							SendCallEnd(other);
+						}
+
 						RemoveClient(socket); //not iterating through clientssl like c++ so safe to immediately remove
 						continue;
 					}
@@ -293,6 +302,14 @@ namespace DTOperator
 							{
 								RemoveClient(oldcmd);
 							}
+
+							//send call end for a dropped call if necessary
+							String other = userUtils.GetCallWith(name);
+							if(!other.Equals(""))
+							{
+								SendCallEnd(other);
+							}
+
 							userUtils.ClearSession(name);
 
 							//set the internal db information
@@ -441,16 +458,7 @@ namespace DTOperator
 								continue;
 							}
 
-							//reset state and deregister call
-							userUtils.SetUserState(touma, Const.ustate.NONE);
-							userUtils.SetUserState(zapper, Const.ustate.NONE);
-							userUtils.RemoveCallPair(touma);
-
-							//send hang up
-							String end = unixNow + "|end|" + touma;
-							Socket zapperSocket = userUtils.GetCommandSocket(zapper);
-							Write2Client(end, zapperSocket);
-							userUtils.InsertLog(new Log(Log.TAG_END, end, zapper, Log.OUTBOUND, zapperSocket.RemoteEndPoint.ToString()));
+							SendCallEnd(zapper);
 						}
 					}
 					catch (Exception e)
@@ -720,5 +728,22 @@ namespace DTOperator
 			}
 			return true;
         }
+
+		private static void SendCallEnd(String user)
+		{
+			String other = userUtils.GetCallWith(user);
+
+			//reset state and deregister call
+			userUtils.SetUserState(user, Const.ustate.NONE);
+			userUtils.SetUserState(other, Const.ustate.NONE);
+			userUtils.RemoveCallPair(user);
+
+			//send hang up
+			long unixNow = DateTimeOffset.Now.ToUnixTimeSeconds();
+			String end = unixNow + "|end|" + other;
+			Socket socket = userUtils.GetCommandSocket(user);
+			Write2Client(end, socket);
+			userUtils.InsertLog(new Log(Log.TAG_END, end, user, Log.OUTBOUND, socket.RemoteEndPoint.ToString()));
+		}
     }
 }
