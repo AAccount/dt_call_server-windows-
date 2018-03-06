@@ -75,7 +75,14 @@ namespace DTOperator
 
 			logStamp = DateTime.Now;
 			String nowString = logStamp.ToString("MM_dd_yyyy_HH_mm") + ".log"; //windows version uses file extensions
-			logger = new FileStream(Const.LOGFOLDER + nowString, FileMode.OpenOrCreate);
+			try
+			{
+				logger = new FileStream(Const.LOGFOLDER + nowString, FileMode.OpenOrCreate);
+			}
+			catch(Exception e)
+			{
+				Console.WriteLine("Couldn't create log file: " + e.Message + "\n" + e.StackTrace);
+			}
 		}
 
 		public RSACryptoServiceProvider GetPublicKey(String username)
@@ -354,15 +361,29 @@ namespace DTOperator
 			DateTime now = DateTime.Now;
 			if((now - logStamp).Days > 0)
 			{
-				logger.Close();
+				if (logger != null)
+				{
+					logger.Close();
+				}
 				logStamp = now;
 				String nowString = now.ToString("MM_dd_yyyy_HH_mm") + ".log";
-				logger = new FileStream(Const.LOGFOLDER + nowString, FileMode.OpenOrCreate);
+
+				try
+				{
+					logger = new FileStream(Const.LOGFOLDER + nowString, FileMode.OpenOrCreate);
+				}
+				catch(Exception e)
+				{
+					Console.WriteLine("Couldn't create log file: " + e.Message + "\n" + e.StackTrace);
+				}
 			}
 
-			byte[] logbytes = log.ToBytes();
-			logger.Write(logbytes, 0, logbytes.Length);
-			logger.Flush();
+			if (logger != null)
+			{
+				byte[] logbytes = log.ToBytes();
+				logger.Write(logbytes, 0, logbytes.Length);
+				logger.Flush();
+			}
 			Console.WriteLine(log);
 		}
 	}
