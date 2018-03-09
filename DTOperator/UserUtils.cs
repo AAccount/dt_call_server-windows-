@@ -17,9 +17,7 @@ namespace DTOperator
 		private Dictionary<Socket, User> commandSocketMap = new Dictionary<Socket, User>();
 		private Dictionary<String, User> sessionkeyMap = new Dictionary<String, User>();
 		private Dictionary<IPEndPoint, User> udpMap = new Dictionary<IPEndPoint, User>();
-
-		private DateTime logStamp;
-		private FileStream logger;
+		private FileLogger fileLogger = FileLogger.GetInstance();
 
 		public static UserUtils getInstance()
 		{
@@ -72,17 +70,6 @@ namespace DTOperator
 				nameMap[uname] = user;
 			}
 			usersfile.Close();
-
-			logStamp = DateTime.Now;
-			String nowString = logStamp.ToString("MM_dd_yyyy_HH_mm") + ".log"; //windows version uses file extensions
-			try
-			{
-				logger = new FileStream(Const.LOGFOLDER + nowString, FileMode.OpenOrCreate);
-			}
-			catch(Exception e)
-			{
-				Console.WriteLine("Couldn't create log file: " + e.Message + "\n" + e.StackTrace);
-			}
 		}
 
 		public RSACryptoServiceProvider GetPublicKey(String username)
@@ -112,7 +99,7 @@ namespace DTOperator
 			else
 			{
 				String error = "trying to set a challenge for somebody that doesn't exist: " + username;
-				InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
+				fileLogger.InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
 			}
 		}
 
@@ -126,7 +113,7 @@ namespace DTOperator
 			else
 			{
 				String error = "trying to set a session key for somebody that doesn't exist: " + username;
-				InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
+				fileLogger.InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
 			}
 		}
 
@@ -146,7 +133,7 @@ namespace DTOperator
 			else
 			{
 				String error = "trying to set a command fd for a session key that isn't real";
-				InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
+				fileLogger.InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
 			}
 		}
 
@@ -173,7 +160,7 @@ namespace DTOperator
 			else
 			{
 				String error = "trying to clear a session for somebody that doesn't exist " + username;
-				InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
+				fileLogger.InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
 			}
 		}
 
@@ -191,7 +178,7 @@ namespace DTOperator
 			if(!commandSocketMap.ContainsKey(socket))
 			{
 				String error = "no user owns the socket object";
-				InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
+				fileLogger.InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
 				return "";
 			}
 			return commandSocketMap[socket].Name;
@@ -202,7 +189,7 @@ namespace DTOperator
 			if(!sessionkeyMap.ContainsKey(sessionkey))
 			{
 				String error = "nobody has that session key";
-				InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
+				fileLogger.InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
 				return "";
 			}
 			return sessionkeyMap[sessionkey].Name;
@@ -213,7 +200,7 @@ namespace DTOperator
 			if(!nameMap.ContainsKey(user))
 			{
 				String error = "tried to get a command socket for somebody that doesn't exist " + user;
-				InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
+				fileLogger.InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
 				return null;
 			}
 			return nameMap[user].CommandSocket;
@@ -224,7 +211,7 @@ namespace DTOperator
 			if (!nameMap.ContainsKey(user))
 			{
 				String error = "tried to get a session key for somebody that doesn't exist";
-				InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
+				fileLogger.InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
 				return "";
 			}
 			return nameMap[user].Sessionkey;
@@ -250,7 +237,7 @@ namespace DTOperator
 			else
 			{
 				String error = "tried to set udp info for a non existant session key";
-				InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
+				fileLogger.InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
 			}
 		}
 
@@ -263,7 +250,7 @@ namespace DTOperator
 			else
 			{
 				String error = "tried to get udp info for somebody that doesn't exist: " + uname;
-				InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
+				fileLogger.InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
 				return null;
 			}
 		}
@@ -283,7 +270,7 @@ namespace DTOperator
 			else
 			{
 				String error = "tried to clear udp info for somebody that doesn't exist: " + uname;
-				InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
+				fileLogger.InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
 			}
 		}
 
@@ -296,7 +283,7 @@ namespace DTOperator
 			else
 			{
 				String error = "tried to get the user state of somebody that doesn't exist: " + uname;
-				InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
+				fileLogger.InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
 				return Const.ustate.NONE;
 			}
 		}
@@ -310,7 +297,7 @@ namespace DTOperator
 			else
 			{
 				String error = "tried to set the user state for somebody that doesn't exist: " + uname;
-				InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
+				fileLogger.InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
 			}
 		}
 
@@ -323,7 +310,7 @@ namespace DTOperator
 			else
 			{
 				String error = "tried to get the public key of somebody that doesn't exist: " + uname;
-				InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
+				fileLogger.InsertLog(new Log(Log.TAG_USERUTILS, error, Log.SELF, Log.ERROR, Log.SELFIP));
 				return "";
 			}
 		}
@@ -354,37 +341,6 @@ namespace DTOperator
 				nameMap[a].CallWith = "";
 				nameMap[other].CallWith = "";
 			}
-		}
-
-		public void InsertLog(Log log)
-		{
-			DateTime now = DateTime.Now;
-			if((now - logStamp).Days > 0)
-			{
-				if (logger != null)
-				{
-					logger.Close();
-				}
-				logStamp = now;
-				String nowString = now.ToString("MM_dd_yyyy_HH_mm") + ".log";
-
-				try
-				{
-					logger = new FileStream(Const.LOGFOLDER + nowString, FileMode.OpenOrCreate);
-				}
-				catch(Exception e)
-				{
-					Console.WriteLine("Couldn't create log file: " + e.Message + "\n" + e.StackTrace);
-				}
-			}
-
-			if (logger != null)
-			{
-				byte[] logbytes = log.ToBytes();
-				logger.Write(logbytes, 0, logbytes.Length);
-				logger.Flush();
-			}
-			Console.WriteLine(log);
 		}
 	}
 }
