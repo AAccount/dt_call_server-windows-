@@ -15,7 +15,7 @@ namespace DTOperator
 		private static FileLogger instance = null;
 		private Queue<Log> queue = null;
 		private AutoResetEvent wakeup;
-		private Object qMutex = new Object();
+		private Object qMutex = null;
 
 		public static FileLogger GetInstance()
 		{
@@ -41,6 +41,7 @@ namespace DTOperator
 
 			queue = new Queue<Log>();
 			wakeup = new AutoResetEvent(false); //Q is empty at the beginning
+            qMutex = new Object();
 
 			Thread diskRWThread = new Thread(() => DiskRW());
 			try
