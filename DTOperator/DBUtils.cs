@@ -58,7 +58,7 @@ namespace DTOperator
 				}
 				catch (Exception e)
 				{
-					WriteDBLog(new Log(Log.TAG_DBUTILS, "user: " + username + "\n" + e.Message + "\n" + e.StackTrace, Log.SELF, Log.ERROR, Log.SELFIP));
+					Logger.GetInstance().InsertLog(new Log(Log.TAG_DBUTILS, "user: " + username + "\n" + e.Message + "\n" + e.StackTrace, Log.SELF, Log.ERROR, Log.SELFIP));
 					return false;
 				}
             }
