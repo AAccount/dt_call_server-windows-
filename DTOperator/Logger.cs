@@ -8,36 +8,27 @@ using System.Threading.Tasks;
 
 namespace DTOperator
 {
-	class FileLogger
+	class Logger
 	{
 		private DateTime logStamp;
-		private FileStream logger;
-		private static FileLogger instance = null;
+		private FileStream fileLogger;
+		private static Logger instance = null;
 		private Queue<Log> queue = null;
 		private AutoResetEvent wakeup;
 		private Object qMutex = null;
 
-		public static FileLogger GetInstance()
+		public static Logger GetInstance()
 		{
 			if(instance == null)
 			{
-				instance = new FileLogger();
+				instance = new Logger();
 			}
 			return instance;
 		}
 
-		private FileLogger()
+		private Logger()
 		{
-			logStamp = DateTime.Now;
-			String nowString = logStamp.ToString("MM_dd_yyyy_HH_mm") + ".log"; //windows version uses file extensions
-			try
-			{
-				logger = new FileStream(Const.LOGFOLDER + nowString, FileMode.OpenOrCreate);
-			}
-			catch (Exception e)
-			{
-				Console.WriteLine("Couldn't create log file: " + e.Message + "\n" + e.StackTrace);
-			}
+			//won't know until later whether file logging or not.
 
 			queue = new Queue<Log>();
 			wakeup = new AutoResetEvent(false); //Q is empty at the beginning
@@ -84,19 +75,20 @@ namespace DTOperator
 						empty = queue.Count() == 0;
 					}
 
+					//if doing file logging and the log is too old (or this is the 1st log), create a new file
 					DateTime now = DateTime.Now;
-					if ((now - logStamp).Days > 0)
+					if (!Server.DBLogs && (fileLogger == null || ((now - logStamp).Days > 0)))
 					{
-						if (logger != null)
+						if (fileLogger != null)
 						{
-							logger.Close();
+							fileLogger.Close();
 						}
 						logStamp = now;
 						String nowString = now.ToString("MM_dd_yyyy_HH_mm") + ".log";
 
 						try
 						{
-							logger = new FileStream(Const.LOGFOLDER + nowString, FileMode.OpenOrCreate);
+							fileLogger = new FileStream(Const.LOGFOLDER + nowString, FileMode.OpenOrCreate);
 						}
 						catch (Exception e)
 						{
@@ -104,11 +96,16 @@ namespace DTOperator
 						}
 					}
 
-					if (logger != null)
+					//write the log to the appropriate place
+					if (!Server.DBLogs && (fileLogger != null))
 					{
 						byte[] logbytes = log.ToBytes();
-						logger.Write(logbytes, 0, logbytes.Length);
-						logger.Flush();
+						fileLogger.Write(logbytes, 0, logbytes.Length);
+						fileLogger.Flush();
+					}
+					if(Server.DBLogs)
+					{
+						DBUtils.GetInstnace().WriteDBLog(log);
 					}
 					Console.WriteLine(log);
 				}

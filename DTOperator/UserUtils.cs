@@ -17,7 +17,7 @@ namespace DTOperator
 		private Dictionary<Socket, User> commandSocketMap = new Dictionary<Socket, User>();
 		private Dictionary<String, User> sessionkeyMap = new Dictionary<String, User>();
 		private Dictionary<IPEndPoint, User> udpMap = new Dictionary<IPEndPoint, User>();
-		private FileLogger fileLogger = FileLogger.GetInstance();
+		private Logger fileLogger = Logger.GetInstance();
 
 		public static UserUtils getInstance()
 		{
@@ -30,46 +30,104 @@ namespace DTOperator
 
 		private UserUtils()
 		{
-			StreamReader usersfile = new StreamReader(Const.USERSFILE);
-			String line;
-			while((line = usersfile.ReadLine()) != null)
+			if (!Server.DBAccounts)
 			{
-				if(line.Length == 0 || line[0] == '#')
+				StreamReader usersfile = new StreamReader(Const.USERSFILE);
+				String line;
+				while ((line = usersfile.ReadLine()) != null)
 				{
-					continue;
-				}
+					if (line.Length == 0 || line[0] == '#')
+					{
+						continue;
+					}
 
-				String[] contents = line.Split('>');
-				if(contents.Length != 2)
-				{
-					Console.WriteLine("Users file line '" + line + "' is misconfigured");
-					continue;
-				}
-				String uname = Utils.Trim(contents[0]);
-				String path = Utils.Trim(contents[1]);
+					String[] contents = line.Split('>');
+					if (contents.Length != 2)
+					{
+						Console.WriteLine("Users file line '" + line + "' is misconfigured");
+						continue;
+					}
+					String uname = Utils.Trim(contents[0]);
+					String path = Utils.Trim(contents[1]);
+					
+					RSACryptoServiceProvider publicKey = Key.PemKeyUtils.GetRSAProviderFromPemFile(path);
+					if (publicKey == null)
+					{
+						Console.WriteLine("Problems creating public key obj for " + uname);
+						continue;
+					}
 
-				RSACryptoServiceProvider publicKey = Key.PemKeyUtils.GetRSAProviderFromPemFile(path);
-				if(publicKey == null)
-				{
-					Console.WriteLine("Problems creating public key obj for " + uname);
-					continue;
-				}
+					String publicKeyDump = File.ReadAllText(contents[1]);
+					if (publicKeyDump == null || publicKeyDump.Equals(""))
+					{
+						Console.WriteLine("Public key dump to string failed for: " + uname);
+					}
 
-				String publicKeyDump = File.ReadAllText(contents[1]);
-				if(publicKeyDump == null || publicKeyDump.Equals(""))
-				{
-					Console.WriteLine("Public key dump to string failed for: " + uname);
+					User user = new User(uname, publicKey, publicKeyDump);
+					if (nameMap.ContainsKey(uname))
+					{
+						Console.WriteLine("Duplicate account entires for: " + uname);
+						nameMap.Remove(uname);
+					}
+					nameMap[uname] = user;
 				}
-
-				User user = new User(uname, publicKey, publicKeyDump);
-				if(nameMap.ContainsKey(uname))
-				{
-					Console.WriteLine("Duplicate account entires for: " + uname);
-					nameMap.Remove(uname);
-				}
-				nameMap[uname] = user;
+				usersfile.Close();
 			}
-			usersfile.Close();
+		}
+
+		//dynamically load the certificate (if changed) or disable the account
+		//	according to the MSSql database
+		//returns true: account changed (should remove sockets and start fresh), false: no change
+		public bool DynamicLoad(String username)
+		{
+			if (!Server.DBAccounts)
+			{
+				Logger.GetInstance().InsertLog(new Log(Log.TAG_USERUTILS, "tried to dynamic load when not in accounts db mode", Log.SELF, Log.ERROR, Log.SELFIP));
+				return false; //nothing loaded from the DB, nothing changed.
+			}
+
+			//check if the account is enabled
+			DBUtils dbutils = DBUtils.GetInstnace();
+			bool enabled = dbutils.IsEnabled(username);
+			if(!enabled)
+			{
+				if(nameMap.ContainsKey(username))
+				{
+					//account exists but is now disabled
+					return true; //account has changed
+				}
+				else
+				{
+					return false; //nothing was there to begin with, nothing changed
+				}
+			}
+
+			//check if the public key changed
+			String dbPublicKey = dbutils.GetDump(username);
+			String currentPublicKey = nameMap[username].PublicKeyDump;
+			if(!dbPublicKey.Equals(currentPublicKey))
+			{
+				//public key changed
+				RSACryptoServiceProvider newPublicKey = Key.PemKeyUtils.GetRSAProviderFromPemDump(dbPublicKey);
+				User user = nameMap[username];
+				user.PublicKey = newPublicKey;
+				user.PublicKeyDump = dbPublicKey;
+				return true;
+			}
+			return false;
+		}
+
+		//remove account from the in memory db
+		public void PurgeAccount(String username)
+		{
+			if(!Server.DBAccounts)
+			{
+				Logger.GetInstance().InsertLog(new Log(Log.TAG_USERUTILS, "tried to purge accounts from in memory db when not in db accounts mode", Log.SELF, Log.ERROR, Log.SELFIP));
+				return;
+			}
+
+			ClearSession(username);
+			nameMap.Remove(username);
 		}
 
 		public RSACryptoServiceProvider GetPublicKey(String username)

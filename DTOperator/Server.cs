@@ -16,14 +16,13 @@ namespace DTOperator
 	class Server
     {
 		private static UserUtils userUtils = UserUtils.getInstance();
-		private static FileLogger fileLogger = FileLogger.GetInstance();
+		private static Logger logger = Logger.GetInstance();
 		private static Dictionary<Socket, SslStream> clientssl = new Dictionary<Socket, SslStream>();
+		public static bool DBAccounts = false;
+		public static bool DBLogs = true; //default to true to prevent empty log file when starting up because Logger.GetInstance() is called before anything happens
 
-        static void Main(string[] args)
+		static void Main(string[] args)
         {
-			String start = "Staring call operator (windows c#) V" + Const.VERSION;
-			fileLogger.InsertLog(new Log(Log.TAG_INIT, start, Log.SELF, Log.SYSTEM, Log.SELFIP));
-			
 			int cmdPort = Const.DEFAULTCMD;
 			bool gotCmd = false;
 			int mediaPort = Const.DEFAULTMEDIA;
@@ -63,14 +62,30 @@ namespace DTOperator
 				{
 					mergedKeyFile = value;
 				}
+				else if(var.Equals("DBAccounts"))
+				{
+					value = Utils.Trim(value);
+					value = value.ToLower();
+					DBAccounts = value.Equals("true");
+				}
+				else if(var.Equals("DBLogs"))
+				{
+					value = Utils.Trim(value);
+					value = value.ToLower();
+					DBLogs = value.Equals("true");
+				}
 			}
 			confFile.Close();
 
+			//log the startup message AFTER the decision of log to db or file has been figured out
+			String start = "Staring call operator V" + Const.VERSION;
+			logger.InsertLog(new Log(Log.TAG_INIT, start, Log.SELF, Log.SYSTEM, Log.SELFIP));
+
 			//no certificate, no encrypted connections, end of story
-			if(mergedKeyFile.Equals(""))
+			if (mergedKeyFile.Equals(""))
 			{
 				String error = "no merged public and private key supplied";
-				fileLogger.InsertLog(new Log(Log.TAG_INIT, error, Log.SELF, Log.ERROR, Log.SELFIP));
+				logger.InsertLog(new Log(Log.TAG_INIT, error, Log.SELF, Log.ERROR, Log.SELFIP));
 				return;
 			}
 			
@@ -78,12 +93,12 @@ namespace DTOperator
 			if(!gotCmd)
 			{
 				String warn = "using the default command port";
-				fileLogger.InsertLog(new Log(Log.TAG_INIT, warn, Log.SELF, Log.SYSTEM, Log.SELFIP));
+				logger.InsertLog(new Log(Log.TAG_INIT, warn, Log.SELF, Log.SYSTEM, Log.SELFIP));
 			}
 			if(!gotMedia)
 			{
 				String warn = "using the default media port";
-				fileLogger.InsertLog(new Log(Log.TAG_INIT, warn, Log.SELF, Log.SYSTEM, Log.SELFIP));
+				logger.InsertLog(new Log(Log.TAG_INIT, warn, Log.SELF, Log.SYSTEM, Log.SELFIP));
 			}
 
 			//generate public and private key objects from merged key file
@@ -206,7 +221,7 @@ namespace DTOperator
 					{
 						String unexpected = "unexpected byte in string";
 						String user = userUtils.UserFromCommandSocket(socket);
-						fileLogger.InsertLog(new Log(Log.TAG_BADCMD, unexpected, user, Log.ERROR, ip));
+						logger.InsertLog(new Log(Log.TAG_BADCMD, unexpected, user, Log.ERROR, ip));
 						continue;
 					}
 
@@ -242,7 +257,7 @@ namespace DTOperator
 						{
 							String error = "command received outside the margin of error, seconds: " + diff;
 							String name = userUtils.UserFromCommandSocket(socket);
-							fileLogger.InsertLog(new Log(Log.TAG_BADCMD, error, name, Log.ERROR, ip));
+							logger.InsertLog(new Log(Log.TAG_BADCMD, error, name, Log.ERROR, ip));
 							Write2Client(unixNow + "|invalid", socket);
 						}
 
@@ -251,12 +266,29 @@ namespace DTOperator
 						{//unixts|login1|user
 
 							String name = commandContents.ElementAt(2);
-							fileLogger.InsertLog(new Log(Log.TAG_LOGIN, bufferString, name, Log.INBOUND, ip));
+							logger.InsertLog(new Log(Log.TAG_LOGIN, bufferString, name, Log.INBOUND, ip));
+
+							if(Server.DBAccounts)
+							{
+								bool changed = userUtils.DynamicLoad(name);
+								if(changed)
+								{
+									//you do want to get rid of the old stuff even if the login1 request is illegitimate
+									//a change in account (new public key, changed from enabled/disabled) 
+									Socket oldcmd = userUtils.GetCommandSocket(name);
+									if (oldcmd != null)
+									{
+										RemoveClient(oldcmd);
+									}
+									userUtils.PurgeAccount(name);
+								}
+							}
+
 							RSACryptoServiceProvider publicKey = userUtils.GetPublicKey(name);
 							if(publicKey == null)
 							{//not a real user
 								String invalid = unixNow + "|invalid";
-								fileLogger.InsertLog(new Log(Log.TAG_LOGIN, invalid, name, Log.OUTBOUND, ip));
+								logger.InsertLog(new Log(Log.TAG_LOGIN, invalid, name, Log.OUTBOUND, ip));
 								Write2Client(invalid, socket);
 								RemoveClient(socket);
 								continue;
@@ -271,7 +303,7 @@ namespace DTOperator
 							//send challenge
 							String resp = unixNow + "|login1resp|" + encString;
 							Write2Client(resp, socket);
-							fileLogger.InsertLog(new Log(Log.TAG_LOGIN, resp, name, Log.OUTBOUND, ip));
+							logger.InsertLog(new Log(Log.TAG_LOGIN, resp, name, Log.OUTBOUND, ip));
 							continue;
 						}
 						else if(command.Equals("login2"))
@@ -279,14 +311,14 @@ namespace DTOperator
 
 							String name = commandContents.ElementAt(2);
 							String triedChallenge = commandContents.ElementAt(3);
-							fileLogger.InsertLog(new Log(Log.TAG_LOGIN, bufferString, name, Log.INBOUND, ip));
+							logger.InsertLog(new Log(Log.TAG_LOGIN, bufferString, name, Log.INBOUND, ip));
 
 							//check challenge answer and don't allow loophole
 							String answer = userUtils.GetChallenge(name);
 							if(answer.Equals("") || triedChallenge != answer)
 							{
 								String invalid = unixNow + "|invalid";
-								fileLogger.InsertLog(new Log(Log.TAG_LOGIN, invalid, name, Log.OUTBOUND, ip));
+								logger.InsertLog(new Log(Log.TAG_LOGIN, invalid, name, Log.OUTBOUND, ip));
 								Write2Client(invalid, socket);
 								RemoveClient(socket);
 
@@ -323,7 +355,7 @@ namespace DTOperator
 							String resp = unixNow + "|login2resp|" + skey;
 							Write2Client(resp, socket);
 							resp = unixNow + "|login2resp|" + Const.SESSIONKEY_PLACEHOLDER;
-							fileLogger.InsertLog(new Log(Log.TAG_LOGIN, resp, name, Log.OUTBOUND, ip));
+							logger.InsertLog(new Log(Log.TAG_LOGIN, resp, name, Log.OUTBOUND, ip));
 							continue;
 						}
 
@@ -336,11 +368,11 @@ namespace DTOperator
 						if(!userUtils.VerifySessionkey(sessionkey, socket))
 						{
 							String error = "sessionkey verification failed, refusing (" + bufferString + ")";
-							fileLogger.InsertLog(new Log(Log.TAG_BADCMD, error, user, Log.ERROR, ip));
+							logger.InsertLog(new Log(Log.TAG_BADCMD, error, user, Log.ERROR, ip));
 
 							String invalid = unixNow + "|invalid";
 							Write2Client(invalid, socket);
-							fileLogger.InsertLog(new Log(Log.TAG_BADCMD, invalid, user, Log.OUTBOUND, ip));
+							logger.InsertLog(new Log(Log.TAG_BADCMD, invalid, user, Log.OUTBOUND, ip));
 							continue;
 						}
 
@@ -349,7 +381,7 @@ namespace DTOperator
 
 							String zapper = commandContents.ElementAt(2);
 							String touma = user;
-							fileLogger.InsertLog(new Log(Log.TAG_CALL, bufferString, user, Log.INBOUND, ip));
+							logger.InsertLog(new Log(Log.TAG_CALL, bufferString, user, Log.INBOUND, ip));
 							Socket zapperSocket = userUtils.GetCommandSocket(zapper);
 
 							//find out if zapper is available to call
@@ -360,7 +392,7 @@ namespace DTOperator
 							{
 								String na = unixNow + "|end|" + zapper;
 								Write2Client(na, socket);
-								fileLogger.InsertLog(new Log(Log.TAG_CALL, na, user, Log.OUTBOUND, ip));
+								logger.InsertLog(new Log(Log.TAG_CALL, na, user, Log.OUTBOUND, ip));
 								continue;
 							}
 
@@ -371,18 +403,18 @@ namespace DTOperator
 
 							String notifyTouma = unixNow + "|available|" + zapper;
 							Write2Client(notifyTouma, socket);
-							fileLogger.InsertLog(new Log(Log.TAG_CALL, notifyTouma, touma, Log.OUTBOUND, ip));
+							logger.InsertLog(new Log(Log.TAG_CALL, notifyTouma, touma, Log.OUTBOUND, ip));
 
 							String notifyZapper = unixNow + "|incoming|" + touma;
 							Write2Client(notifyZapper, zapperSocket);
-							fileLogger.InsertLog(new Log(Log.TAG_CALL, notifyZapper, zapper, Log.OUTBOUND, IpFromSocket(zapperSocket)));
+							logger.InsertLog(new Log(Log.TAG_CALL, notifyZapper, zapper, Log.OUTBOUND, IpFromSocket(zapperSocket)));
 						}
 						else if(command.Equals("accept"))
 						{//unixts|accept|touma|zapperkey
 
 							String zapper = user;
 							String touma = commandContents.ElementAt(2);
-							fileLogger.InsertLog(new Log(Log.TAG_ACCEPT, bufferString, zapper, Log.INBOUND, ip));
+							logger.InsertLog(new Log(Log.TAG_ACCEPT, bufferString, zapper, Log.INBOUND, ip));
 
 							if(!IsRealCall(zapper, touma, Log.TAG_ACCEPT))
 							{
@@ -392,11 +424,11 @@ namespace DTOperator
 							Socket toumaSocket = userUtils.GetCommandSocket(touma);
 							String prepareTouma = unixNow + "|prepare|" + userUtils.GetPublicKeyDump(zapper) + "|" + zapper;
 							Write2Client(prepareTouma, toumaSocket);
-							fileLogger.InsertLog(new Log(Log.TAG_ACCEPT, prepareTouma, touma, Log.OUTBOUND, IpFromSocket(toumaSocket)));
+							logger.InsertLog(new Log(Log.TAG_ACCEPT, prepareTouma, touma, Log.OUTBOUND, IpFromSocket(toumaSocket)));
 
 							String prepareZapper = unixNow + "|prepare|" + userUtils.GetPublicKeyDump(touma) + "|" + touma;
 							Write2Client(prepareZapper, socket);
-							fileLogger.InsertLog(new Log(Log.TAG_ACCEPT, prepareZapper, zapper, Log.OUTBOUND, ip));
+							logger.InsertLog(new Log(Log.TAG_ACCEPT, prepareZapper, zapper, Log.OUTBOUND, ip));
 						}
 						else if(command.Equals("passthrough"))
 						{//unixts|passthrough|zapper|encrypted aes key|toumakey
@@ -405,7 +437,7 @@ namespace DTOperator
 							String touma = user;
 							String aes = commandContents.ElementAt(3);
 							bufferString.Replace(aes, Const.ENCAES_PLACEHOLDER);
-							fileLogger.InsertLog(new Log(Log.TAG_PASSTHROUGH, bufferString, touma, Log.INBOUND, ip));
+							logger.InsertLog(new Log(Log.TAG_PASSTHROUGH, bufferString, touma, Log.INBOUND, ip));
 
 							if(!IsRealCall(touma, zapper, Log.TAG_PASSTHROUGH))
 							{
@@ -418,19 +450,19 @@ namespace DTOperator
 								String direct = unixNow + "|direct|" + aes + "|" + touma;
 								Write2Client(direct, zapperSocket);
 								direct.Replace(aes, Const.ENCAES_PLACEHOLDER);
-								fileLogger.InsertLog(new Log(Log.TAG_PASSTHROUGH, direct, zapper, Log.OUTBOUND, zapperSocket.RemoteEndPoint.ToString()));
+								logger.InsertLog(new Log(Log.TAG_PASSTHROUGH, direct, zapper, Log.OUTBOUND, zapperSocket.RemoteEndPoint.ToString()));
 							}
 							else
 							{
 								String error = "??? person to passthrough to has a null socket??";
-								fileLogger.InsertLog(new Log(Log.TAG_PASSTHROUGH, error, zapper, Log.ERROR, "??missing??"));
+								logger.InsertLog(new Log(Log.TAG_PASSTHROUGH, error, zapper, Log.ERROR, "??missing??"));
 							}
 						}
 						else if(command.Equals("ready"))
 						{//unixts|ready|touma|zapperkey
 							String zapper = user;
 							String touma = commandContents.ElementAt(2);
-							fileLogger.InsertLog(new Log(Log.TAG_READY, bufferString, zapper, Log.INBOUND, ip));
+							logger.InsertLog(new Log(Log.TAG_READY, bufferString, zapper, Log.INBOUND, ip));
 							if(!IsRealCall(zapper, touma, Log.TAG_READY))
 							{
 								continue;
@@ -442,18 +474,18 @@ namespace DTOperator
 								Socket toumaSocket = userUtils.GetCommandSocket(touma);
 								String toumaResp = unixNow + "|start|" + zapper;
 								Write2Client(toumaResp, toumaSocket);
-								fileLogger.InsertLog(new Log(Log.TAG_READY, toumaResp, touma, Log.OUTBOUND, toumaSocket.RemoteEndPoint.ToString()));
+								logger.InsertLog(new Log(Log.TAG_READY, toumaResp, touma, Log.OUTBOUND, toumaSocket.RemoteEndPoint.ToString()));
 
 								String zapperResp = unixNow + "|start|" + touma;
 								Write2Client(zapperResp, socket);
-								fileLogger.InsertLog(new Log(Log.TAG_READY, zapperResp, zapper, Log.OUTBOUND, ip));
+								logger.InsertLog(new Log(Log.TAG_READY, zapperResp, zapper, Log.OUTBOUND, ip));
 							}
 						}
 						else if(command.Equals("end"))
 						{//unixts|end|zapper|toumakey
 							String zapper = commandContents.ElementAt(2);
 							String touma = user;
-							fileLogger.InsertLog(new Log(Log.TAG_END, bufferString, touma, Log.INBOUND, ip));
+							logger.InsertLog(new Log(Log.TAG_END, bufferString, touma, Log.INBOUND, ip));
 							if(!IsRealCall(touma, zapper, Log.TAG_END))
 							{
 								continue;
@@ -466,11 +498,11 @@ namespace DTOperator
 					{
 						String stacktrace = e.Message +"\n"+ e.StackTrace;
 						String user = userUtils.UserFromCommandSocket(socket);
-						fileLogger.InsertLog(new Log(Log.TAG_BADCMD, stacktrace, user, Log.INBOUND, ip));
+						logger.InsertLog(new Log(Log.TAG_BADCMD, stacktrace, user, Log.INBOUND, ip));
 
 						String invalid = unixNow + "|invalid";
 						Write2Client(invalid, socket);
-						fileLogger.InsertLog(new Log(Log.TAG_BADCMD, invalid, user, Log.OUTBOUND, ip));
+						logger.InsertLog(new Log(Log.TAG_BADCMD, invalid, user, Log.OUTBOUND, ip));
 						continue;
 					}
 				}
@@ -506,7 +538,7 @@ namespace DTOperator
 				catch (Exception e)
 				{
 					String error = e.Message + "\n" + e.StackTrace;
-					fileLogger.InsertLog(new Log(Log.TAG_UDPTHRAD, error, Log.SELF, Log.ERROR, sender.ToString()));
+					logger.InsertLog(new Log(Log.TAG_UDPTHRAD, error, Log.SELF, Log.ERROR, sender.ToString()));
 					continue;
 				}
 
@@ -533,7 +565,7 @@ namespace DTOperator
 					{
 						String unexpected = "unexpected byte in string";
 						String logUser = user.Equals("") ? "(new registration)" : user;
-						fileLogger.InsertLog(new Log(Log.TAG_UDPTHRAD, unexpected, logUser, Log.ERROR, sender.ToString()));
+						logger.InsertLog(new Log(Log.TAG_UDPTHRAD, unexpected, logUser, Log.ERROR, sender.ToString()));
 						continue;
 					}
 
@@ -558,7 +590,7 @@ namespace DTOperator
 						if(diff > Const.MARGIN_OF_ERROR*60)
 						{
 							String error = "media port registration timestamp too far off, diff:" + diff;
-							fileLogger.InsertLog(new Log(Log.TAG_UDPTHRAD, error, user, Log.ERROR, sender.ToString()));
+							logger.InsertLog(new Log(Log.TAG_UDPTHRAD, error, user, Log.ERROR, sender.ToString()));
 							continue;
 						}
 
@@ -581,7 +613,7 @@ namespace DTOperator
 					catch(Exception e)
 					{
 						String ex = e.Message + "\n" + e.StackTrace;
-						fileLogger.InsertLog(new Log(Log.TAG_UDPTHRAD, ex, user, Log.ERROR, sender.ToString()));
+						logger.InsertLog(new Log(Log.TAG_UDPTHRAD, ex, user, Log.ERROR, sender.ToString()));
 					}
 				}
 				else if(state == Const.ustate.INCALL)
@@ -602,7 +634,7 @@ namespace DTOperator
 					catch(Exception e)
 					{
 						String ex = e.Message + "\n" + e.StackTrace;
-						fileLogger.InsertLog(new Log(Log.TAG_UDPTHRAD, ex, user, Log.ERROR, otherPersonAddr.ToString()));
+						logger.InsertLog(new Log(Log.TAG_UDPTHRAD, ex, user, Log.ERROR, otherPersonAddr.ToString()));
 					}
 				}
 			}
@@ -652,7 +684,7 @@ namespace DTOperator
 			catch (Exception e)
 			{
 					String exDump = e.Message + "\n" + e.StackTrace;
-					fileLogger.InsertLog(new Log(Log.TAG_SSL, exDump, user, Log.ERROR, ip));
+					logger.InsertLog(new Log(Log.TAG_SSL, exDump, user, Log.ERROR, ip));
 			}
 		}
 		
@@ -683,10 +715,10 @@ namespace DTOperator
 					long unixNow = DateTimeOffset.Now.ToUnixTimeSeconds();
 					String invalid = unixNow + "|invalid";
 					Write2Client(invalid, socket);
-					fileLogger.InsertLog(new Log(tag, invalid, a, Log.OUTBOUND, ip));
+					logger.InsertLog(new Log(tag, invalid, a, Log.OUTBOUND, ip));
 				}
 				String error = a + " sent a command for a non existant call with " + b;
-				fileLogger.InsertLog(new Log(tag, error, a, Log.ERROR, ip));
+				logger.InsertLog(new Log(tag, error, a, Log.ERROR, ip));
 
 			}
 
@@ -696,7 +728,7 @@ namespace DTOperator
 		private static void DumpException(Exception e, String tag)
 		{
 			String ex = e.Message + "\n" + e.StackTrace;
-			fileLogger.InsertLog(new Log(tag, ex, Log.SELF, Log.ERROR, Log.SELFIP));
+			logger.InsertLog(new Log(tag, ex, Log.SELF, Log.ERROR, Log.SELFIP));
 		}
 
 		private static String IpFromSocket(Socket s)
@@ -744,7 +776,7 @@ namespace DTOperator
 			String end = unixNow + "|end|" + other;
 			Socket socket = userUtils.GetCommandSocket(user);
 			Write2Client(end, socket);
-			fileLogger.InsertLog(new Log(Log.TAG_END, end, user, Log.OUTBOUND, socket.RemoteEndPoint.ToString()));
+			logger.InsertLog(new Log(Log.TAG_END, end, user, Log.OUTBOUND, socket.RemoteEndPoint.ToString()));
 		}
     }
 }

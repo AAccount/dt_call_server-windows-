@@ -51,7 +51,26 @@ namespace DTOperator
 
 			}
 
+			public static RSACryptoServiceProvider GetRSAProviderFromPemDump(String pemstr)
+			{
+				bool isPrivateKeyFile = true;
+				if (pemstr.StartsWith(pempubheader) && pemstr.EndsWith(pempubfooter))
+					isPrivateKeyFile = false;
 
+				byte[] pemkey;
+				if (isPrivateKeyFile)
+					pemkey = DecodeOpenSSLPrivateKey(pemstr);
+				else
+					pemkey = DecodeOpenSSLPublicKey(pemstr);
+
+				if (pemkey == null)
+					return null;
+
+				if (isPrivateKeyFile)
+					return DecodeRSAPrivateKey(pemkey);
+				else
+					return DecodeX509PublicKey(pemkey);
+			}
 
 			//--------   Get the binary RSA PUBLIC key   --------
 			static byte[] DecodeOpenSSLPublicKey(String instr)

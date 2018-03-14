@@ -13,8 +13,8 @@ namespace DTOperator
 	{
 		public String Name { get; }
 		public Socket CommandSocket { get; set; }
-		public RSACryptoServiceProvider PublicKey { get; }
-		public String PublicKeyDump { get; }
+		public RSACryptoServiceProvider PublicKey { get; set; }
+		public String PublicKeyDump { get; set; }
 		public String Challenge { get; set; }
 		public String Sessionkey { get; set; }
 

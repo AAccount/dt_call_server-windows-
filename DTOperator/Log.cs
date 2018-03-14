@@ -32,21 +32,26 @@ namespace DTOperator
 		public static readonly String TAG_PASSTHROUGH = "passthrough command";
 		public static readonly String TAG_READY = "ready command";
 		public static readonly String TAG_SOCKET = "socket obj"; //tag doesn't exist in unix c/c++ version
+		public static readonly String TAG_DBUTILS = "mssql dbutils";
 
-		private String tag, message, user, type, ip;
+		public String Tag { get; }
+		public String Message { get; }
+		public String User { get; }
+		public String Type { get; }
+		public String Ip { get; }
 		public Log(String ctag, String cmessage, String cuser, String ctype, String cip)
 		{
-			tag = ctag;
-			message = cmessage;
-			type = ctype;
-			user = cuser;
-			ip = cip;
+			Tag = ctag;
+			Message = cmessage;
+			Type = ctype;
+			User = cuser;
+			Ip = cip;
 		}
 
 		public override String ToString()
 		{
-			return DateTime.Now.ToString("MMMM dd yyyy HH:mm") + " tag=" + tag + "; message=" + message + "; user=" + user + "; type=" + type
-				+ "; ip=" + ip + "\n";
+			return DateTime.Now.ToString("MMMM dd yyyy HH:mm") + " tag=" + Tag + "; message=" + Message + "; user=" + User + "; type=" + Type
+				+ "; ip=" + Ip + "\n";
 		}
 
 		public byte[] ToBytes()
