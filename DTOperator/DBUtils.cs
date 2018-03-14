@@ -51,7 +51,9 @@ namespace DTOperator
 					{
 						if (reader.HasRows)
 						{
-							return (bool)reader["Enabled"];
+							reader.Read();
+							bool result = (bool)reader["enabled"];
+							return result;
 						}
 						return false;
 					}
@@ -84,7 +86,9 @@ namespace DTOperator
 				{
 					if (reader.HasRows)
 					{
-						return (String)reader["Keydump"];
+						reader.Read();
+						String result = (String)reader["Keydump"];
+						return result;
 					}
 					return null;
 				}
