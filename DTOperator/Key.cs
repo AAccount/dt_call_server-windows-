@@ -54,8 +54,11 @@ namespace DTOperator
 			public static RSACryptoServiceProvider GetRSAProviderFromPemDump(String pemstr)
 			{
 				bool isPrivateKeyFile = true;
+				pemstr = pemstr.Trim();
 				if (pemstr.StartsWith(pempubheader) && pemstr.EndsWith(pempubfooter))
+				{
 					isPrivateKeyFile = false;
+				}
 
 				byte[] pemkey;
 				if (isPrivateKeyFile)

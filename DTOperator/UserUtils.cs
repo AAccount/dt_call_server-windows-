@@ -19,7 +19,7 @@ namespace DTOperator
 		private Dictionary<IPEndPoint, User> udpMap = new Dictionary<IPEndPoint, User>();
 		private Logger fileLogger = Logger.GetInstance();
 
-		public static UserUtils getInstance()
+		public static UserUtils GetInstance()
 		{
 			if(instance == null)
 			{
@@ -94,6 +94,10 @@ namespace DTOperator
 				if(nameMap.ContainsKey(username))
 				{
 					//account exists but is now disabled
+					//	kill the public key in the in-memory db to make the account
+					//	look like it doesn't exist anymore
+					nameMap[username].PublicKey = null;
+					nameMap[username].PublicKeyDump = "";
 					return true; //account has changed
 				}
 				else
@@ -102,32 +106,28 @@ namespace DTOperator
 				}
 			}
 
-			//check if the public key changed
+			//if the account isn't in the in-memory db add it
 			String dbPublicKey = dbutils.GetDump(username);
+			dbPublicKey = dbPublicKey.Replace("\r", "");
+			RSACryptoServiceProvider dbRSA = Key.PemKeyUtils.GetRSAProviderFromPemDump(dbPublicKey);
+			if (!nameMap.ContainsKey(username))
+			{
+				User user = new User(username, dbRSA, dbPublicKey);
+				nameMap[username] = user;
+				return true;
+			}
+
+			//if the account exists in the in-memory db check if the public key changed
 			String currentPublicKey = nameMap[username].PublicKeyDump;
 			if(!dbPublicKey.Equals(currentPublicKey))
 			{
 				//public key changed
-				RSACryptoServiceProvider newPublicKey = Key.PemKeyUtils.GetRSAProviderFromPemDump(dbPublicKey);
 				User user = nameMap[username];
-				user.PublicKey = newPublicKey;
+				user.PublicKey = dbRSA;
 				user.PublicKeyDump = dbPublicKey;
 				return true;
 			}
 			return false;
-		}
-
-		//remove account from the in memory db
-		public void PurgeAccount(String username)
-		{
-			if(!Server.DBAccounts)
-			{
-				Logger.GetInstance().InsertLog(new Log(Log.TAG_USERUTILS, "tried to purge accounts from in memory db when not in db accounts mode", Log.SELF, Log.ERROR, Log.SELFIP));
-				return;
-			}
-
-			ClearSession(username);
-			nameMap.Remove(username);
 		}
 
 		public RSACryptoServiceProvider GetPublicKey(String username)

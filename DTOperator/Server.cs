@@ -15,8 +15,8 @@ namespace DTOperator
 {
 	class Server
     {
-		private static UserUtils userUtils = UserUtils.getInstance();
-		private static Logger logger = Logger.GetInstance();
+		private static UserUtils userUtils = null;
+		private static Logger logger = null;
 		private static Dictionary<Socket, SslStream> clientssl = new Dictionary<Socket, SslStream>();
 		public static bool DBAccounts = false;
 		public static bool DBLogs = true; //default to true to prevent empty log file when starting up because Logger.GetInstance() is called before anything happens
@@ -78,6 +78,8 @@ namespace DTOperator
 			confFile.Close();
 
 			//log the startup message AFTER the decision of log to db or file has been figured out
+			logger = Logger.GetInstance();
+			userUtils = UserUtils.GetInstance();
 			String start = "Staring call operator V" + Const.VERSION;
 			logger.InsertLog(new Log(Log.TAG_INIT, start, Log.SELF, Log.SYSTEM, Log.SELFIP));
 
@@ -268,25 +270,26 @@ namespace DTOperator
 							String name = commandContents.ElementAt(2);
 							logger.InsertLog(new Log(Log.TAG_LOGIN, bufferString, name, Log.INBOUND, ip));
 
-							if(Server.DBAccounts)
+							if(DBAccounts)
 							{
 								bool changed = userUtils.DynamicLoad(name);
 								if(changed)
 								{
 									//you do want to get rid of the old stuff even if the login1 request is illegitimate
-									//a change in account (new public key, changed from enabled/disabled) 
+									//a change in account (new public key, changed from enabled/disabled) would have to have
+									//come from the actual user who would be relogging in anyways in the very near future
 									Socket oldcmd = userUtils.GetCommandSocket(name);
 									if (oldcmd != null)
 									{
 										RemoveClient(oldcmd);
 									}
-									userUtils.PurgeAccount(name);
+									userUtils.ClearSession(name);
 								}
 							}
 
 							RSACryptoServiceProvider publicKey = userUtils.GetPublicKey(name);
 							if(publicKey == null)
-							{//not a real user
+							{//not a real user... or a disabled account
 								String invalid = unixNow + "|invalid";
 								logger.InsertLog(new Log(Log.TAG_LOGIN, invalid, name, Log.OUTBOUND, ip));
 								Write2Client(invalid, socket);
