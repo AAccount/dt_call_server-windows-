@@ -5,7 +5,7 @@
     [Message]      TEXT         NOT NULL,
     [User]         VARCHAR (50) NOT NULL,
     [Type]         VARCHAR (10) NOT NULL,
-    [Ip]           VARCHAR (12) NOT NULL,
+    [Ip]           VARCHAR (20) NOT NULL,
     PRIMARY KEY CLUSTERED ([Id] ASC)
 );
 
