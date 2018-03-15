@@ -13,6 +13,7 @@ namespace DTOperator
         private static DBUtils instance = null;
 
         private SqlConnection conn = null;
+		private object sqllock = new object();
 
         public static DBUtils GetInstnace()
         {
@@ -38,32 +39,35 @@ namespace DTOperator
                 return false;
             }
 
-            using (SqlCommand checkEnabled = new SqlCommand())
-            {
-                checkEnabled.CommandText = "select Enabled from Users where Username=@uname";
-                checkEnabled.Parameters.AddWithValue("@uname", username);
-                checkEnabled.CommandType = System.Data.CommandType.Text;
-                checkEnabled.Connection = conn;
-
-				try //public facing function that gets the user name. try/catch to prevent a malicious "user name" causing a fatal crash
+			lock (sqllock)
+			{
+				using (SqlCommand checkEnabled = new SqlCommand())
 				{
-					using (SqlDataReader reader = checkEnabled.ExecuteReader())
+					checkEnabled.CommandText = "select Enabled from Users where Username=@uname";
+					checkEnabled.Parameters.AddWithValue("@uname", username);
+					checkEnabled.CommandType = System.Data.CommandType.Text;
+					checkEnabled.Connection = conn;
+
+					try //public facing function that gets the user name. try/catch to prevent a malicious "user name" causing a fatal crash
 					{
-						if (reader.HasRows)
+						using (SqlDataReader reader = checkEnabled.ExecuteReader())
 						{
-							reader.Read();
-							bool result = (bool)reader["enabled"];
-							return result;
+							if (reader.HasRows)
+							{
+								reader.Read();
+								bool result = (bool)reader["enabled"];
+								return result;
+							}
+							return false;
 						}
+					}
+					catch (Exception e)
+					{
+						Logger.GetInstance().InsertLog(new Log(Log.TAG_DBUTILS, "user: " + username + "\n" + e.Message + "\n" + e.StackTrace, Log.SELF, Log.ERROR, Log.SELFIP));
 						return false;
 					}
 				}
-				catch (Exception e)
-				{
-					Logger.GetInstance().InsertLog(new Log(Log.TAG_DBUTILS, "user: " + username + "\n" + e.Message + "\n" + e.StackTrace, Log.SELF, Log.ERROR, Log.SELFIP));
-					return false;
-				}
-            }
+			}
         }
 
 		//get a user's public key string dump
@@ -75,22 +79,25 @@ namespace DTOperator
 				return null;
 			}
 
-			using (SqlCommand checkEnabled = new SqlCommand())
+			lock (sqllock)
 			{
-				checkEnabled.CommandText = "select Keydump from Users where Username=@uname";
-				checkEnabled.Parameters.AddWithValue("@uname", username);
-				checkEnabled.CommandType = System.Data.CommandType.Text;
-				checkEnabled.Connection = conn;
-
-				using (SqlDataReader reader = checkEnabled.ExecuteReader())
+				using (SqlCommand checkEnabled = new SqlCommand())
 				{
-					if (reader.HasRows)
+					checkEnabled.CommandText = "select Keydump from Users where Username=@uname";
+					checkEnabled.Parameters.AddWithValue("@uname", username);
+					checkEnabled.CommandType = System.Data.CommandType.Text;
+					checkEnabled.Connection = conn;
+
+					using (SqlDataReader reader = checkEnabled.ExecuteReader())
 					{
-						reader.Read();
-						String result = (String)reader["Keydump"];
-						return result;
+						if (reader.HasRows)
+						{
+							reader.Read();
+							String result = (String)reader["Keydump"];
+							return result;
+						}
+						return null;
 					}
-					return null;
 				}
 			}
 		}
@@ -102,19 +109,22 @@ namespace DTOperator
 				return;
 			}
 
-			using (SqlCommand ins = new SqlCommand())
+			lock (sqllock)
 			{
-				String command = "insert into logs (tag, message, [user], type, ip)" + 
-					"values (@tag, @msg, @user, @type, @ip)";
-				ins.CommandText = command;
-				ins.Parameters.AddWithValue("@tag", log.Tag);
-				ins.Parameters.AddWithValue("@msg", log.Message);
-				ins.Parameters.AddWithValue("@user", log.User);
-				ins.Parameters.AddWithValue("@type", log.Type);
-				ins.Parameters.AddWithValue("@ip", log.Ip);
-				ins.CommandType = System.Data.CommandType.Text;
-				ins.Connection = conn;
-				ins.ExecuteNonQuery();
+				using (SqlCommand ins = new SqlCommand())
+				{
+					String command = "insert into logs (tag, message, [user], type, ip)" +
+						"values (@tag, @msg, @user, @type, @ip)";
+					ins.CommandText = command;
+					ins.Parameters.AddWithValue("@tag", log.Tag);
+					ins.Parameters.AddWithValue("@msg", log.Message);
+					ins.Parameters.AddWithValue("@user", log.User);
+					ins.Parameters.AddWithValue("@type", log.Type);
+					ins.Parameters.AddWithValue("@ip", log.Ip);
+					ins.CommandType = System.Data.CommandType.Text;
+					ins.Connection = conn;
+					ins.ExecuteNonQuery();
+				}
 			}
 		}
     }
