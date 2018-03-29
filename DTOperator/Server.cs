@@ -429,7 +429,7 @@ namespace DTOperator
 							Write2Client(prepareTouma, toumaSocket);
 							logger.InsertLog(new Log(Log.TAG_ACCEPT, prepareTouma, touma, Log.OUTBOUND, IpFromSocket(toumaSocket)));
 
-							String prepareZapper = unixNow + "|prepare|" + userUtils.GetPublicKeyDump(touma) + "|" + touma;
+							String prepareZapper = unixNow + "|prepare|" + touma;
 							Write2Client(prepareZapper, socket);
 							logger.InsertLog(new Log(Log.TAG_ACCEPT, prepareZapper, zapper, Log.OUTBOUND, ip));
 						}
